@@ -1,5 +1,5 @@
 {
-  "base_url": "https://74f4aa7f673c18.lhr.life",
+  "base_url": "https://6edbd22cad2b58.lhr.life",
   "app_management": {
     "access_control": {
       "enforce_limit": true,
@@ -12,13 +12,16 @@
           "device_model": "SM-A107F",
           "status": "allowed"
         },
-        "18374d12-9ffd-3828-b209-d82b8440fb73"
+        "18374d12-9ffd-3828-b209-d82b8440fb73",
+        "78876d12-9ffd-38e8-b209-d82b8110fb73",
+        "dff92e3e-bdc1-3b96-9dde-0d40765c6e76",
+        "180420cc-dc69-3b14-b94b-7d29a66e41e4"
       ],
       "blocked_devices": []
     }
   },
   "server": {
-    "baseUrl": "https://74f4aa7f673c18.lhr.life",
+    "baseUrl": "https://6edbd22cad2b58.lhr.life",
     "status": "online"
   }
 }
