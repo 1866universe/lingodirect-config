@@ -1,5 +1,5 @@
 {
-  "base_url": "https://3c275e4544ce2c.lhr.life",
+  "base_url": "https://74f4aa7f673c18.lhr.life",
   "app_management": {
     "access_control": {
       "enforce_limit": true,
@@ -11,13 +11,14 @@
           "admin_label": "user-001",
           "device_model": "SM-A107F",
           "status": "allowed"
-        }
+        },
+        "78876d12-9ffd-38e8-b209-d82b8110fb73"
       ],
       "blocked_devices": []
     }
   },
   "server": {
-    "baseUrl": "https://3c275e4544ce2c.lhr.life",
+    "baseUrl": "https://74f4aa7f673c18.lhr.life",
     "status": "online"
   }
 }
