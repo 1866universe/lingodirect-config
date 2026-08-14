@@ -1,5 +1,5 @@
 {
-  "base_url": "https://bf549d38ece35c.lhr.life",
+  "base_url": "https://01cdff0593929f.lhr.life",
   "app_management": {
     "access_control": {
       "enforce_limit": true,
@@ -11,13 +11,19 @@
           "device_model": "SM-A107F",
           "status": "allowed"
         },
-        "dff92e3e-bdc1-3b96-9dde-0d40765c6e76"
+        "dff92e3e-bdc1-3b96-9dde-0d40765c6e76",
+        {
+          "device_id": "180420cc-dc69-3b14-b94b-7d29a66e41e4",
+          "admin_label": "user-002",
+          "device_model": "sdk_gphone_x86",
+          "status": "allowed"
+        }
       ],
       "blocked_devices": []
     }
   },
   "server": {
-    "baseUrl": "https://bf549d38ece35c.lhr.life",
+    "baseUrl": "https://01cdff0593929f.lhr.life",
     "status": "online"
   }
 }
