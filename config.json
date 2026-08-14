@@ -6,16 +6,9 @@
       "max_users": 10,
       "registered_devices": [
         {
-          "device_id": "611bb917-339d-3d9a-9807-503872f61183",
-          "admin_label": "user-001",
-          "device_model": "SM-A107F",
-          "status": "allowed"
-        },
-        "dff92e3e-bdc1-3b96-9dde-0d40765c6e76",
-        {
           "device_id": "180420cc-dc69-3b14-b94b-7d29a66e41e4",
           "admin_label": "user-002",
-          "device_model": "sdk_gphone_x86",
+          "device_model": "sdk_gphone_x86"
           "status": "allowed"
         }
       ],
