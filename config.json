@@ -1,22 +1,34 @@
 {
-  "base_url": "https://01cdff0593929f.lhr.life",
+  "server": {
+    "baseUrl": "https://c78fe7a23f08ac.lhr.life",
+    "status": "online"
+  },
   "app_management": {
+    "latest_version": {
+      "versionCode": 2,
+      "versionName": "1.0.1",
+      "apkUrl": "https://github.com/your-repo/releases/download/v1.0.1/app.apk",
+      "isCritical": false
+    },
     "access_control": {
-      "enforce_limit": true,
       "max_users": 10,
+      "enforce_limit": true,
+      "blocked_devices": [],
       "registered_devices": [
+        {
+          "device_id": "dff92e3e-bdc1-3b96-9dde-0d40765c6e76",
+          "admin_label": "user-001",
+          "device_model": "SM-A107F",
+          "status": "allowed"
+        },
         {
           "device_id": "180420cc-dc69-3b14-b94b-7d29a66e41e4",
           "admin_label": "user-002",
-          "device_model": "sdk_gphone_x86"
+          "device_model": "sdk_gphone_x86",
           "status": "allowed"
         }
-      ],
-      "blocked_devices": []
+      ]
     }
   },
-  "server": {
-    "baseUrl": "https://01cdff0593929f.lhr.life",
-    "status": "online"
-  }
+  "base_url": "https://c78fe7a23f08ac.lhr.life"
 }
