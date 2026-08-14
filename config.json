@@ -5,7 +5,6 @@
       "enforce_limit": true,
       "max_users": 10,
       "registered_devices": [
-        "99876d12-954d-3811-b339-d82b8122f273",
         {
           "device_id": "611bb917-339d-3d9a-9807-503872f61183",
           "admin_label": "user-001",
