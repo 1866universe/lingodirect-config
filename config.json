@@ -5,8 +5,8 @@
   },
   "app_management": {
     "latest_version": {
-      "versionCode": 2,
-      "versionName": "1.0.1",
+      "versionCode": 10,
+      "versionName": "1.1.0",
       "apkUrl": "https://github.com/your-repo/releases/download/v1.0.1/app.apk",
       "isCritical": false
     },
@@ -23,7 +23,7 @@
         },
         {
           "device_id": "180420cc-dc69-3b14-b94b-7d29a66e41e4",
-          "admin_label": "user-002",
+          "admin_label": "user-003",
           "device_model": "sdk_gphone_x86",
           "status": "allowed"
         }
