@@ -1,6 +1,6 @@
 {
   "server": {
-    "baseUrl": "https://c78fe7a23f08ac.lhr.life",
+    "baseUrl": "https://8112e2ba11171d.lhr.life",
     "status": "online"
   },
   "app_management": {
@@ -26,9 +26,21 @@
           "admin_label": "user-003",
           "device_model": "sdk_gphone_x86",
           "status": "allowed"
+        },
+        {
+          "device_id": "611bb917-339d-3d9a-9807-503872f61183",
+          "admin_label": "user-004",
+          "device_model": "SM-A107F",
+          "status": "allowed"
+        },
+        {
+          "device_id": "04d2f626-1c88-3928-98f7-8710fb5b489f",
+          "admin_label": "user-005",
+          "device_model": "SM-N950F",
+          "status": "allowed"
         }
       ]
     }
   },
-  "base_url": "https://c78fe7a23f08ac.lhr.life"
+  "base_url": "https://8112e2ba11171d.lhr.life"
 }
