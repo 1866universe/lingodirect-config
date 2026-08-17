@@ -1,6 +1,6 @@
-# lingodirect-config
+# lingodirect-config 
 
-Public configuration repository for **LingoDirect**.
+Public configuration repository for **LingoDirect**
 
 This repository is used to maintain application configuration required by the client-side integration and remote service connectivity.
 
