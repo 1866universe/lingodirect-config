@@ -1,0 +1,25 @@
+{
+  "latest_version_name": "1.1.1",
+  "latest_version_code": 11,
+  "force_update": false,
+  "apk_url": "https://github.com/1866universe/lingodirect-config/releases/download/v1.1.1/LingoDirect-1.1.1.apk",
+  "apk_sha256": "42796b38e7c05de7b0cc1ba2cd0c11d586c50ccacfb93bb5669df538ec163f11",
+
+  "title_fa": "نسخه جدید LingoDirect آماده است",
+  "title_en": "A new version of LingoDirect is available",
+
+  "message_fa": "نسخه جدید LingoDirect شامل بهبود عملکرد و رفع برخی خطاها است.",
+  "message_en": "The new version of LingoDirect includes performance improvements and bug fixes.",
+
+  "release_notes_fa": [
+    "بهبود پایداری و عملکرد برنامه",
+    "رفع خطاهای گزارش‌شده"
+  ],
+  "release_notes_en": [
+    "Improved application stability and performance",
+    "Fixed reported issues"
+  ],
+
+  "positive_button_fa": "متوجه شدم",
+  "positive_button_en": "OK"
+}

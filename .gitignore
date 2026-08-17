@@ -1,0 +1,10 @@
+check_path.py
+PRIVATE_README.md
+__pycache__/
+*.pyc
+RELEASE_GUIDE.md
+client_registry.json
+*.keystore
+*.jks
+*.p12
+local.properties
