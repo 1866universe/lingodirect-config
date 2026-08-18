@@ -3,7 +3,7 @@
   "latest_version_code": 11,
   "force_update": false,
   "apk_url": "https://github.com/1866universe/lingodirect-config/releases/download/v1.1.1/LingoDirect-1.1.1.apk",
-  "apk_sha256": "42796b38e7c05de7b0cc1ba2cd0c11d586c50ccacfb93bb5669df538ec163f11",
+  "apk_sha256": "b25808022f3818775f9794a754e38aaf8595adc7c02e14c62bccda5211c622e7",
 
   "title_fa": "نسخه جدید LingoDirect آماده است",
   "title_en": "A new version of LingoDirect is available",
@@ -20,6 +20,6 @@
     "Fixed reported issues"
   ],
 
-  "positive_button_fa": "متوجه شدم",
+  "positive_button_fa": "تائید",
   "positive_button_en": "OK"
 }

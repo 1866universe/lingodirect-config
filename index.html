@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <title>LingoDirect Admin Redirect</title>
+    <style>
+        body {
+            background-color: #0b0f19;
+            color: #e2e8f0;
+            font-family: Tahoma, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+        .loader {
+            border: 4px solid #1e293b;
+            border-top: 4px solid #38bdf8;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <script>
+        async function redirectToAdmin() {
+            try {
+                // خواندن فایل کانفیگ از مخزن گیت‌هاب
+                const response = await fetch('config.json?t=' + new Date().getTime());
+                if (!response.ok) throw new Error('Failed to load config');
+                const config = await response.json();
+                
+                // استخراج آدرس پایه
+                const baseUrl = config.base_url || (config.server && config.server.baseUrl);
+                if (baseUrl) {
+                    // هدایت مستقیم به صفحه لاگین پنل مدیریت
+                    window.location.href = baseUrl.replace(/\/$/, '') + '/admin';
+                } else {
+                    document.getElementById('status').innerText = 'آدرس سرور در فایل تنظیمات یافت نشد.';
+                }
+            } catch (err) {
+                document.getElementById('status').innerText = 'خطا در ارتباط با مخزن گیت‌هاب: ' + err.message;
+            }
+        }
+        window.onload = redirectToAdmin;
+    </script>
+</head>
+<body>
+    <div>
+        <div class="loader"></div>
+        <div id="status">در حال انتقال به پنل مدیریت LingoDirect...</div>
+    </div>
+</body>
+</html>
