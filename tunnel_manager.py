@@ -1,46 +1,243 @@
 import json
+import logging
+import os
+import queue
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
+from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
+from contextlib import contextmanager
 
+import msvcrt
 import requests
 
+
 # --- Configuration ---
-CONFIG_PATH = Path("config.json")
+
+CONFIG_PATH = Path(
+    r"D:\Android\Projects\LingoDirectWorkspace\lingodirect-config\config.json"
+)
+
+# پوشهٔ اصلی مخزن Git
+REPOSITORY_PATH = CONFIG_PATH.parent
+
+# ذخیرهٔ لاگ‌ها درون همان مخزن/پوشهٔ پروژه
+LOG_DIR = REPOSITORY_PATH / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 LOCAL_SERVER = "http://127.0.0.1:5000"
-# مسیر جدید برای بررسی سلامت بدون ایجاد خطای 404 نامفهوم
-HEALTH_CHECK_URL = f"{LOCAL_SERVER}/health"
-GITHUB_PAGES_URL = "https://1866nazari.github.io/lingodirect-config/config.json"
-TUNNEL_COMMAND = "ssh -R 80:127.0.0.1:5000 nokey@localhost.run"
-STARTUP_TIMEOUT = 30  # Increased timeout for a fresh connection
-RENEWAL_INTERVAL = 600  # هر 10 دقیقه یکبار تونل را ری استارت و زنده می کند (600 ثانیه)
+LOCAL_HEALTH_URL = f"{LOCAL_SERVER}/health"
+TUNNEL_STATUS_URL = f"{LOCAL_SERVER}/tunnel_status"
+
+GITHUB_PAGES_URL = (
+    "https://1866universe.github.io/lingodirect-config/config.json"
+)
+
+
+# Safer than shell=True
+TUNNEL_COMMAND = [
+    "ssh",
+    "-R",
+    "80:127.0.0.1:5000",
+    "nokey@localhost.run",
+]
+
+STARTUP_TIMEOUT = 45
+
+# Health monitoring
+HEALTH_CHECK_INTERVAL = 30
+HEALTH_CHECK_TIMEOUT = 8
+MAX_CONSECUTIVE_FAILURES = 3
+
+# Tunnel validation before publishing
+PUBLIC_VALIDATION_ATTEMPTS = 3
+PUBLIC_VALIDATION_DELAY = 2
+
+# Retry/backoff
+RETRY_DELAYS = [2, 5, 10, 20, 30, 60]
+
+# HTTP headers
+LOCAL_MONITOR_HEADERS = {
+    "User-Agent": "Tunnel-Manager/Internal-Local-Check"
+}
+
+PUBLIC_MONITOR_HEADERS = {
+    "User-Agent": "Tunnel-Manager/Public-Health-Check"
+}
+
+
+# --- Logging ---
+
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+
+file_handler = RotatingFileHandler(
+    filename=str(LOG_DIR / "tunnel_manager.log"),
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=5,               # حداکثر 5 فایل پشتیبان
+    encoding="utf-8",
+)
+
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+console.setFormatter(logging.Formatter(LOG_FORMAT))
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# جلوگیری از اضافه شدن Handler تکراری
+root_logger.handlers.clear()
+
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console)
+
+
+def utc_now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 
 # --- Utility Functions ---
 
-def run_command(command, cwd=None):
-    """Executes a shell command."""
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        shell=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode, result.stdout.strip(), result.stderr.strip()
-
-
-def is_server_alive():
-    """Checks if the local Flask server is running using the new health endpoint."""
+def run_command(command, cwd=REPOSITORY_PATH):
+    """
+    اجرای امن دستورات ثابت Git.
+    command باید به‌صورت list ارسال شود، نه string.
+    """
     try:
-        # ارسال User-Agent اختصاصی برای تشخیص در لاگ‌های فلسک
-        headers = {"User-Agent": "Tunnel-Monitor/1.0"}
-        response = requests.get(HEALTH_CHECK_URL, headers=headers, timeout=3)
+        result = subprocess.run(
+            command,
+            cwd=str(cwd),
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+
+        return (
+            result.returncode,
+            result.stdout.strip(),
+            result.stderr.strip(),
+        )
+
+    except subprocess.TimeoutExpired:
+        command_text = " ".join(command)
+        logging.error(
+            f"Git command timed out after 60 seconds: {command_text}"
+        )
+        return 124, "", "Command timed out"
+
+    except OSError as error:
+        command_text = " ".join(command)
+        logging.error(
+            f"Failed to execute command {command_text}: {error}"
+        )
+        return 1, "", str(error)
+
+
+def is_local_server_alive():
+    """Checks if the local Flask server is running."""
+    try:
+        response = requests.get(
+            LOCAL_HEALTH_URL,
+            headers=LOCAL_MONITOR_HEADERS,
+            timeout=3,
+        )
         return response.status_code == 200
-    except requests.RequestException:
-        print("Local Flask server is not responding.")
+    except requests.RequestException as e:
+        logging.warning(f"Local Flask server is not responding: {e}")
         return False
+
+
+def is_public_tunnel_alive(public_url):
+    """
+    Checks if the public tunnel URL reaches the Flask /health endpoint.
+    This validates the real public route, not just the local Flask server.
+    """
+    if not public_url:
+        return False
+
+    health_url = public_url.rstrip("/") + "/health"
+
+    try:
+        response = requests.get(
+            health_url,
+            headers=PUBLIC_MONITOR_HEADERS,
+            timeout=HEALTH_CHECK_TIMEOUT,
+        )
+
+        if response.status_code != 200:
+            logging.warning(
+                f"Public health failed. url={health_url}, status={response.status_code}"
+            )
+            return False
+
+        # Optional but useful:
+        # If your /health endpoint returns JSON, validate it here.
+        # For now, status 200 is enough to avoid breaking current Flask code.
+        return True
+
+    except requests.RequestException as e:
+        logging.warning(f"Public health exception. url={health_url}, error={e}")
+        return False
+
+
+def validate_public_tunnel(public_url):
+    """
+    Performs multiple public health checks before publishing the URL to GitHub.
+    """
+    for i in range(1, PUBLIC_VALIDATION_ATTEMPTS + 1):
+        if is_public_tunnel_alive(public_url):
+            logging.info(f"Public tunnel validation passed: {public_url}")
+            return True
+
+        logging.warning(
+            f"Public tunnel validation failed "
+            f"({i}/{PUBLIC_VALIDATION_ATTEMPTS}): {public_url}"
+        )
+        time.sleep(PUBLIC_VALIDATION_DELAY)
+
+    return False
+
+
+CONFIG_LOCK_PATH = CONFIG_PATH.parent / "config.json.lock"
+CONFIG_LOCK_TIMEOUT_SECONDS = 10
+
+@contextmanager
+def config_file_lock(timeout_seconds=CONFIG_LOCK_TIMEOUT_SECONDS):
+    """قفل بین‌پردازه‌ای مشترک با app.py"""
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_LOCK_PATH, "a+b") as lock_file:
+        lock_file.seek(0, os.SEEK_END)
+        if lock_file.tell() == 0:
+            lock_file.write(b"0")
+            lock_file.flush()
+        lock_file.seek(0)
+        deadline = time.time() + timeout_seconds
+        lock_acquired = False
+        while time.time() < deadline:
+            try:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                lock_acquired = True
+                break
+            except OSError:
+                time.sleep(0.1)
+        if not lock_acquired:
+            raise TimeoutError("Timed out waiting for config.json lock")
+        try:
+            yield
+        finally:
+            try:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
 
 
 def load_current_url():
@@ -56,69 +253,61 @@ def load_current_url():
 
 
 def save_url(new_url):
-    """Writes the new URL to the local config file while preserving existing settings."""
-    # ۱. تعریف ساختار پیش‌فرض در صورتی که فایل هنوز ایجاد نشده یا خراب باشد
-    default_data = {
-        "server": {
-            "baseUrl": new_url,
-            "status": "online"
-        },
-        "app_management": {
-            "latest_version": {
-                "versionCode": 2,
-                "versionName": "1.0.1",
-                "apkUrl": "https://github.com/your-repo/releases/download/v1.0.1/app.apk",
-                "isCritical": False
-            },
-            "access_control": {
-                "max_users": 10,
-                "enforce_limit": True,
-                "blocked_devices": [],
-                "registered_devices": []
-            }
-        },
-        "base_url": new_url
-    }
-
-    data = default_data
-
-    # ۲. تلاش برای خواندن اطلاعات موجود و حفظ ساختار قبلی
-    if CONFIG_PATH.exists():
-        try:
-            existing_content = CONFIG_PATH.read_text(encoding="utf-8")
-            if existing_content.strip():
-                loaded_data = json.loads(existing_content)
-                if isinstance(loaded_data, dict):
-                    data = loaded_data
-                    
-                    # به‌روزرسانی فقط فیلدهای آدرس و وضعیت سرور
-                    data["base_url"] = new_url
-                    
-                    if "server" not in data or not isinstance(data["server"], dict):
-                        data["server"] = {}
-                    data["server"]["baseUrl"] = new_url
-                    data["server"]["status"] = "online"
-                    
-                    # اطمینان از وجود بخش مدیریت اپلیکیشن بدون دست زدن به مقادیر آن
-                    if "app_management" not in data:
-                        data["app_management"] = default_data["app_management"]
-                        
-                else:
-                    print("Warning: config.json format is not a dictionary. Overwriting with default.")
-        except json.JSONDecodeError:
-            print("Warning: config.json is corrupted. Rebuilding with default structure.")
-        except Exception as e:
-            print(f"Warning: Failed to read existing config.json: {e}")
-
-    # ۳. ذخیره‌سازی نهایی فایل با حفظ فرمت زیبا و متون یونیکد (فارسی)
+    """ذخیره‌سازی ایمن و اتمیک URL با استفاده از قفل مشترک"""
     try:
-        CONFIG_PATH.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        print(f"-> Local config updated successfully. Preserved existing configurations.")
+        with config_file_lock():
+            data = {}
+
+            if CONFIG_PATH.exists():
+                try:
+                    existing_content = CONFIG_PATH.read_text(encoding="utf-8").strip()
+                    if existing_content:
+                        loaded_data = json.loads(existing_content)
+                        if isinstance(loaded_data, dict):
+                            data = loaded_data
+                except json.JSONDecodeError:
+                    logging.warning(
+                        "config.json is corrupted or invalid JSON. Rebuilding structure."
+                    )
+                except OSError as e:
+                    logging.warning(f"Failed to read config.json: {e}")
+
+            if not isinstance(data, dict):
+                data = {}
+
+            data["base_url"] = new_url
+
+            if "server" not in data or not isinstance(data["server"], dict):
+                data["server"] = {}
+
+            data["server"]["baseUrl"] = new_url
+            data["server"]["status"] = "online"
+
+            tmp_path = CONFIG_PATH.with_suffix(".json.tmp")
+            backup_path = CONFIG_PATH.with_suffix(".json.bak")
+
+            # بکاپ قبل از نوشتن
+            if CONFIG_PATH.exists():
+                try:
+                    backup_path.write_text(
+                        CONFIG_PATH.read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not create backup: {e}")
+
+            # نوشتن اتمیک در فایل موقت
+            tmp_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            # جایگزینی اتمیک
+            os.replace(tmp_path, CONFIG_PATH)
+
+            logging.info("Local config updated atomically with lock.")
     except Exception as e:
-        print(f"Error saving config.json: {e}")
+        logging.error(f"Error saving config.json atomically: {e}")
 
 
 def get_public_url():
@@ -128,78 +317,114 @@ def get_public_url():
         if response.status_code == 200:
             data = response.json()
             return data.get("base_url")
-    except (requests.RequestException, ValueError):
-        pass
+    except (requests.RequestException, ValueError) as e:
+        logging.warning(f"Failed to read GitHub Pages config: {e}")
 
     return None
 
 
 def commit_and_push(new_url):
-    """Updates config.json, keeps tunnel URL in a single amendable commit, and pushes safely on current branch."""
-    print("Starting Git update process...")
+    """
+    ذخیرهٔ URL جدید در config.json و انتشار آن با استفاده از
+    amend کردن commit فعلی.
 
-    TUNNEL_COMMIT_PREFIX = "TunnelURL:"
-    TUNNEL_COMMIT_MESSAGE = f"{TUNNEL_COMMIT_PREFIX} update active tunnel endpoint"
+    روند Git:
+        git status
+        git add config.json
+        git commit --amend --no-edit
+        git push --force-with-lease origin main
+    """
+    logging.info("Starting Git update process...")
 
-    # 1. Get current branch (instead of forcing main)
-    code, out, err = run_command("git branch --show-current")
-    current_branch = (out or "").strip()
-    print(f"-> Git: Working on branch: {current_branch}")
-
-    # 2. Pull latest changes safely
-    print(f"-> Git: Pulling latest changes on {current_branch}...")
-    # ابتدا بررسی می‌کنیم که آیا این شاخه در ریموت وجود دارد یا خیر
-    code, out, err = run_command(f"git ls-remote --heads origin {current_branch}")
-    if (out or "").strip():
-        # اگر شاخه در ریموت وجود دارد، pull انجام بده
-        code, out, err = run_command(f"git pull --ff-only origin {current_branch}")
-        if code != 0:
-            print("Git pull failed:", out or err)
-            return False
-    else:
-        print("-> Git: Remote branch does not exist yet. Skipping pull.")
-
-    # 3. Save new URL locally
+    # ابتدا URL جدید در فایل محلی ذخیره می‌شود.
+    # این تابع سایر اطلاعات config.json را حفظ می‌کند.
     save_url(new_url)
 
-    # Stage
-    run_command("git add config.json")
-    print(f"-> Git: Staging file with URL: {new_url}")
+    # بررسی وضعیت مخزن
+    code, out, err = run_command(
+        ["git", "status", "--short"]
+    )
 
-    # If nothing changed, skip
-    code, out, err = run_command("git diff --cached --name-only")
-    staged = (out or "").strip()
-    if not staged:
-        print("-> Git: No staged changes. Skipping commit/push.")
+    if code != 0:
+        logging.error(f"Git status failed: {out or err}")
+        return False
+
+    logging.info(
+        f"Git status:\n{out or '(no visible changes)'}"
+    )
+
+    # فقط config.json وارد staging می‌شود.
+    code, out, err = run_command(
+        ["git", "add", "config.json"]
+    )
+
+    if code != 0:
+        logging.error(f"Git add failed: {out or err}")
+        return False
+
+    logging.info("Git: config.json staged successfully.")
+
+    # بررسی اینکه واقعاً config.json در staging قرار گرفته است.
+    code, out, err = run_command(
+        ["git", "diff", "--cached", "--name-only"]
+    )
+
+    if code != 0:
+        logging.error(
+            f"Git staged-files check failed: {out or err}"
+        )
+        return False
+
+    staged_files = {
+        line.strip()
+        for line in out.splitlines()
+        if line.strip()
+    }
+
+    if "config.json" not in staged_files:
+        logging.info(
+            "Git: config.json has no staged changes. "
+            "Skipping amend and push."
+        )
         return True
 
-    # 4. Amend or Commit
-    code, out, err = run_command('git log -1 --pretty=%B')
-    last_msg = (out or "").strip()
+    # همیشه commit فعلی اصلاح می‌شود.
+    # هیچ commit جدیدی ایجاد نمی‌شود.
+    code, out, err = run_command(
+        ["git", "commit", "--amend", "--no-edit"]
+    )
 
-    if last_msg.startswith(TUNNEL_COMMIT_PREFIX):
-        # Amend
-        print("-> Git: Amending previous tunnel commit...")
-        code, out, err = run_command(f'git commit --amend -m "{TUNNEL_COMMIT_MESSAGE}"')
-        
-        print(f"-> Git: Pushing amended commit to origin/{current_branch}...")
-        code, out, err = run_command(f"git push --force-with-lease origin {current_branch}")
-        if code != 0:
-            print("Git push failed:", out or err)
-            return False
-        return True
+    if code != 0:
+        logging.error(
+            f"Git commit amend failed: {out or err}"
+        )
+        return False
 
-    else:
-        # Create new
-        print("-> Git: Creating a new dedicated tunnel commit...")
-        code, out, err = run_command(f'git commit -m "{TUNNEL_COMMIT_MESSAGE}"')
-        
-        print(f"-> Git: Pushing to origin/{current_branch}...")
-        code, out, err = run_command(f"git push origin {current_branch}")
-        if code != 0:
-            print("Git push failed:", out or err)
-            return False
-        return True
+    logging.info(
+        "Git: Existing commit amended successfully."
+    )
+
+    # انتشار commit اصلاح‌شده روی شاخهٔ اصلی
+    code, out, err = run_command(
+        [
+            "git",
+            "push",
+            "--force-with-lease",
+            "origin",
+            "main",
+        ]
+    )
+
+    if code != 0:
+        logging.error(
+            f"Git push failed: {out or err}"
+        )
+        return False
+
+    logging.info(
+        "Git: config.json pushed successfully to origin/main."
+    )
+    return True
 
 
 def extract_url(text):
@@ -208,135 +433,307 @@ def extract_url(text):
         r"https://[a-zA-Z0-9.-]+\.(?:lhr\.life|localhost\.run)\b",
         text,
     )
+
     for url in urls:
         if url == "https://admin.localhost.run":
             continue
         return url
+
     return None
 
 
 def start_tunnel():
     """Starts the SSH tunnel process."""
-    # Use Popen to run in the background
+    logging.info("Starting SSH tunnel process...")
+
     process = subprocess.Popen(
         TUNNEL_COMMAND,
-        shell=True,
+        shell=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        bufsize=1, # Line buffering
+        bufsize=1,
     )
+
     return process
 
 
 def shutdown_process(process):
     """Safely terminates the SSH tunnel process."""
+    if not process:
+        return
+
     if process.poll() is not None:
         return
 
+    logging.info("Terminating SSH tunnel process...")
+
     try:
         process.terminate()
-        process.wait(timeout=3)
+        process.wait(timeout=5)
+        logging.info("SSH tunnel process terminated gracefully.")
     except Exception:
+        logging.warning("Graceful termination failed. Killing SSH process...")
         try:
             process.kill()
-            process.wait(timeout=3)
-        except Exception:
+            process.wait(timeout=5)
+            logging.info("SSH tunnel process killed.")
+        except Exception as e:
+            logging.error(f"Failed to kill SSH process: {e}")
+
+
+def stream_reader(process, output_queue):
+    """
+    Reads SSH stdout in a separate thread so the main supervisor does not block.
+    """
+    try:
+        for line in iter(process.stdout.readline, ""):
+            if not line:
+                break
+
+            clean_line = line.strip()
+            output_queue.put(clean_line)
+            logging.info(f"SSH: {clean_line}")
+
+    except Exception as e:
+        logging.error(f"SSH output reader failed: {e}")
+
+
+def wait_for_tunnel_url(process, attempt_id):
+    """
+    Waits for localhost.run/lhr.life to print the public tunnel URL.
+    """
+    output_queue = queue.Queue()
+
+    reader_thread = threading.Thread(
+        target=stream_reader,
+        args=(process, output_queue),
+        daemon=True,
+    )
+    reader_thread.start()
+
+    deadline = time.time() + STARTUP_TIMEOUT
+
+    while time.time() < deadline:
+        if process.poll() is not None:
+            logging.warning(
+                f"[TRY-{attempt_id}] SSH process exited before URL was found. "
+                f"exit_code={process.poll()}"
+            )
+            return None
+
+        try:
+            line = output_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+
+        public_url = extract_url(line)
+        if public_url:
+            logging.info(f"[TRY-{attempt_id}] Candidate tunnel URL found: {public_url}")
+            return public_url
+
+    logging.warning(f"[TRY-{attempt_id}] Timed out waiting for tunnel URL.")
+    return None
+
+
+def report_tunnel_status(status, details, attempt_id=None, public_url=None):
+    """
+    Sends only final/meaningful tunnel status to Flask.
+    Avoid using this for temporary retry noise.
+    """
+    payload = {
+        "status": status,
+        "details": details,
+        "attempt_id": attempt_id,
+        "public_url": public_url,
+        "time": utc_now_iso(),
+    }
+
+    try:
+        requests.post(
+            TUNNEL_STATUS_URL,
+            json=payload,
+            timeout=2,
+        )
+    except requests.RequestException as e:
+        logging.warning(f"Failed to report tunnel status to Flask: {e}")
+
+
+def establish_valid_tunnel(attempt_id):
+    """
+    Starts SSH, extracts candidate URL, validates it publicly,
+    and returns (process, public_url) only when the tunnel is actually usable.
+    """
+    if not is_local_server_alive():
+        logging.warning(f"[TRY-{attempt_id}] Local Flask server is offline.")
+        return None, None
+
+    process = start_tunnel()
+    public_url = wait_for_tunnel_url(process, attempt_id)
+
+    if not public_url:
+        shutdown_process(process)
+        return None, None
+
+    logging.info(f"[TRY-{attempt_id}] Validating public tunnel: {public_url}")
+
+    if not validate_public_tunnel(public_url):
+        logging.warning(
+            f"[TRY-{attempt_id}] Candidate URL failed public validation: {public_url}"
+        )
+        shutdown_process(process)
+        return None, None
+
+    return process, public_url
+
+
+def publish_tunnel_if_needed(public_url, attempt_id):
+    """
+    URL معتبر تونل را در config.json ذخیره و در Git منتشر می‌کند.
+
+    تشخیص تکراری‌بودن URL فقط بر اساس فایل محلی انجام می‌شود.
+    بررسی فوری GitHub Pages حذف شده است، چون ممکن است به‌دلیل cache
+    با تأخیر URL جدید را نشان دهد.
+    """
+    current_url = load_current_url()
+
+    if public_url == current_url:
+        logging.info(
+            f"[TRY-{attempt_id}] URL already matches local config. "
+            f"No publish needed."
+        )
+        return True
+
+    logging.info(
+        f"[TRY-{attempt_id}] Publishing validated URL: {public_url}"
+    )
+
+    if not commit_and_push(public_url):
+        logging.error(
+            f"[TRY-{attempt_id}] Failed to update and publish config.json."
+        )
+        return False
+
+    return True
+
+
+def monitor_active_tunnel(process, public_url, attempt_id):
+    """
+    Keeps the current tunnel alive as long as it is healthy.
+    Returns immediately on the first public health failure.
+    """
+    logging.info(f"[TRY-{attempt_id}] Entering active monitor mode: {public_url}")
+
+    while True:
+        # 1. SSH process-level failure
+        if process.poll() is not None:
+            exit_code = process.poll()
+            logging.warning(
+                f"[TRY-{attempt_id}] SSH process exited. exit_code={exit_code}"
+            )
+            return "ssh_process_exited"
+
+        # 2. Public route health check
+        if is_public_tunnel_alive(public_url):
             pass
+        else:
+            logging.error(
+                f"[TRY-{attempt_id}] Tunnel considered DOWN after first "
+                f"public health failure: {public_url}"
+            )
+            return "public_health_failed"
+
+        time.sleep(HEALTH_CHECK_INTERVAL)
 
 
-def monitor_tunnel_renewal():
+def tunnel_supervisor():
     """
-    Implements the proactive renewal strategy with tagged health checks.
+    Event-driven tunnel supervisor.
+
+    - Does not renew a healthy tunnel.
+    - Publishes only validated public URLs.
+    - Reports only final UP/DOWN states to Flask.
+    - Keeps internal retry noise inside tunnel_manager.log.
     """
-    print(f"Starting Proactive Tunnel Renewal Loop (Interval: {RENEWAL_INTERVAL}s)...")
-    
+    logging.info("Starting Event-Driven Tunnel Supervisor...")
+
+    attempt_id = 0
+    retry_index = 0
+
     process = None
-    attempt_id = 0 # شمارنده برای تشخیص در لاگ فلسک
+    public_url = None
 
     while True:
         attempt_id += 1
-        # --- 1. Shut down existing tunnel ---
-        if process:
-            print(f"[{attempt_id}] Shutting down old tunnel for renewal...")
-            shutdown_process(process)
-            time.sleep(2)
 
-        # --- 2. Check local server health (با ارسال شناسه تلاش) ---
-        try:
-            # ارسال شماره تلاش در User-Agent
-            headers = {"User-Agent": f"Tunnel-Monitor/1.0 (Attempt-{attempt_id})"}
-            response = requests.get(HEALTH_CHECK_URL, headers=headers, timeout=3)
-            server_ok = (response.status_code == 200)
-        except:
-            server_ok = False
+        logging.info(f"[TRY-{attempt_id}] Starting tunnel establishment attempt...")
 
-        if not server_ok:
-            print(f"[{attempt_id}] Flask server offline. Retrying in {RENEWAL_INTERVAL}s...")
-            time.sleep(RENEWAL_INTERVAL)
+        process, public_url = establish_valid_tunnel(attempt_id)
+
+        if not process or not public_url:
+            delay = RETRY_DELAYS[min(retry_index, len(RETRY_DELAYS) - 1)]
+            retry_index += 1
+
+            logging.warning(
+                f"[TRY-{attempt_id}] Tunnel establishment failed. "
+                f"Retrying in {delay}s..."
+            )
+
+            time.sleep(delay)
             continue
-        
-        # --- 3. Start new tunnel ---
-        print(f"[{attempt_id}] Attempting to start new tunnel...")
-        process = start_tunnel()
-        public_url = None
-        startup_deadline = time.time() + STARTUP_TIMEOUT
 
-        # --- 4. Extract URL ---
-        while time.time() < startup_deadline:
-            if process.poll() is not None:
-                break
-            try:
-                line = process.stdout.readline()
-                if line:
-                    line = line.strip()
-                    print(f"[{attempt_id}] SSH: {line}")
-                    public_url = extract_url(line)
-                    if public_url:
-                        break
-            except Exception:
-                pass
-            time.sleep(0.5)
+        # A valid tunnel resets retry/backoff
+        retry_index = 0
 
-        # --- 5. Finalize (ارسال وضعیت بدون تغییر در منطق چرخه اصلی) ---
-        if public_url:
-            print(f"[{attempt_id}] SUCCESS: {public_url}")
-            
-            # اطلاع‌رسانی موفقیت به فلسک
-            try:
-                requests.post(
-                    f"{LOCAL_SERVER}/tunnel_status",
-                    json={"attempt_id": attempt_id, "status": "SUCCESS", "details": public_url},
-                    timeout=2
-                )
-            except:
-                pass
+        if publish_tunnel_if_needed(public_url, attempt_id):
+            report_tunnel_status(
+                status="SUCCESS",
+                details=f"Tunnel established and validated at {public_url}",
+                attempt_id=attempt_id,
+                public_url=public_url,
+            )
 
-            # ادامه منطق پایدار قبلی شما
-            current_url = load_current_url()
-            github_url = get_public_url()
-            if public_url != current_url or public_url != github_url:
-                if not commit_and_push(public_url):
-                    print(f"[{attempt_id}] Failed to update GitHub.")
-            
-            print(f"[{attempt_id}] Waiting {RENEWAL_INTERVAL}s for next renewal...")
-            time.sleep(RENEWAL_INTERVAL)
+            logging.info(
+                f"[TRY-{attempt_id}] Tunnel is UP and published: {public_url}"
+            )
         else:
-            print(f"[{attempt_id}] FAILED to get URL. Retrying in 10s...")
-            
-            # اطلاع‌رسانی شکست به فلسک
-            try:
-                requests.post(
-                    f"{LOCAL_SERVER}/tunnel_status",
-                    json={"attempt_id": attempt_id, "status": "FAILED", "details": "Timeout or connection failed"},
-                    timeout=2
-                )
-            except:
-                pass
-
+            # Conservative behavior:
+            # If GitHub publish fails, we keep the tunnel process alive briefly,
+            # but report no SUCCESS to Flask because Android cannot discover it reliably.
+            logging.error(
+                f"[TRY-{attempt_id}] Tunnel is valid but publish failed. "
+                f"Restarting after cleanup."
+            )
             shutdown_process(process)
             time.sleep(10)
+            continue
+
+        # Stay here as long as the tunnel is healthy.
+        down_reason = monitor_active_tunnel(process, public_url, attempt_id)
+
+        # Confirmed DOWN: report only once.
+        report_tunnel_status(
+            status="DOWN",
+            details=f"Tunnel confirmed down: {down_reason}",
+            attempt_id=attempt_id,
+            public_url=public_url,
+        )
+
+        shutdown_process(process)
+
+        delay = RETRY_DELAYS[min(retry_index, len(RETRY_DELAYS) - 1)]
+        retry_index += 1
+
+        logging.warning(
+            f"[TRY-{attempt_id}] Restarting tunnel after DOWN. "
+            f"Reason={down_reason}. Next attempt in {delay}s..."
+        )
+
+        time.sleep(delay)
 
 
 if __name__ == "__main__":
-    monitor_tunnel_renewal()
+    try:
+        tunnel_supervisor()
+    except KeyboardInterrupt:
+        logging.info("Tunnel supervisor stopped by user.")

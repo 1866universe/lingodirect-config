@@ -1,10 +1,48 @@
-check_path.py
-PRIVATE_README.md
-__pycache__/
+# Private/local project files
+/check_path.py
+/PRIVATE_README.md
+/client_registry.json
+/README_APK_Release.md
+
+# Tunnel Manager local data and logs
+/logs/
+/config_json_backups/
+config.json.lock
+config.json.bak
+
+# Python cache and compiled files
+/__pycache__/
+**/__pycache__/
 *.pyc
-RELEASE_GUIDE.md
-client_registry.json
+*.pyo
+*.pyd
+
+# Android and cryptographic files
 *.keystore
 *.jks
 *.p12
+*.pfx
+*.pem
+*.key
+
+# Local Android/Gradle configuration
 local.properties
+
+# Environment and secret files
+.env
+.env.*
+!.env.example
+
+# Local/private configuration variants
+/config.local.json
+/config.private.json
+/config.secret.json
+
+# Optional local backups
+*.bak
+*.backup
+*.tmp
+
+# Operating system files
+Thumbs.db
+.DS_Store
