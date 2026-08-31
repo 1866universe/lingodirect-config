@@ -1,6 +1,6 @@
 {
   "server": {
-    "baseUrl": "https://5107a9a91e802d.lhr.life",
+    "baseUrl": "https://d9734639d72872.lhr.life",
     "status": "online"
   },
   "app_management": {
@@ -29,9 +29,16 @@
           "device_model": "sdk_gphone_x86",
           "language": "en",
           "status": "allowed"
+        },
+        {
+          "device_id": "919f314b-d3bb-33a8-940a-deb750186e3c",
+          "admin_label": "user-004",
+          "device_model": "SM-A155F",
+          "language": "en",
+          "status": "allowed"
         }
       ]
     }
   },
-  "base_url": "https://5107a9a91e802d.lhr.life"
+  "base_url": "https://d9734639d72872.lhr.life"
 }
