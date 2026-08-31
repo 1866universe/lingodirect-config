@@ -1,49 +1,44 @@
-# lingodirect-config 
+# LingoDirect Configuration & Runtime Protocols
 
-Public configuration repository for **LingoDirect**
+LingoDirect is an open, modular machine translation and cross-lingual communication architecture designed for real-time translation pipelines, speech-to-speech integration, and deterministic linguistic mapping.
 
-This repository is used to maintain application configuration required by the client-side integration and remote service connectivity.
-
-## About LingoDirect
-
-LingoDirect is a communication assistant and a bidirectional voice and text translation tool designed to simplify conversations between people with different native languages. It currently supports Persian and English.
-
-The app is built around direct device-to-device (Peer-to-Peer) communication, allowing secure real-time conversations over a shared local Wi-Fi network or mobile hotspot without relying on intermediary servers.
-
-LingoDirect uses two translation engines:
-
-- **Online engine:** based on **NLLB-200 (nllb-ct2-1.3b)** and hosted on the project's dedicated server
-- **Offline engine:** based on **ML Kit** language models and used for fallback and offline usage
-
-If the network is unavailable or the private server capacity is full, the app automatically switches to the offline engine to keep translation available without interruption.
-
-The project was originally built with limited hardware and infrastructure for personal use, and later released publicly to support broader communication needs. Online engine access depends on the server's permitted capacity, while the app and offline engine remain freely available.
-
-## Features
-
-- Fast voice and text translation between Persian and English
-- Audio playback of translated text
-- Direct communication over local Wi-Fi or mobile hotspot
-- Automatic fallback to offline translation when needed
-- Simple, lightweight, and ad-free design
-- Automatic version checking against the latest stable GitHub release
-
-## Download
-
-The latest stable APK release is available here:
-
-https://github.com/1866universe/lingodirect-config/releases/download/v1.1.1/LingoDirect-1.1.1.apk
+---
 
 ## Overview
+LingoDirect is a communication assistant and a bidirectional voice and text translation tool designed to simplify conversations between people with different native languages. 
+- **Current Support:** Persian and English.
+- **Connectivity:** Peer-to-Peer (P2P) communication, allowing secure real-time conversations over shared local Wi-Fi or mobile hotspots without intermediary servers.
 
-This repository provides:
+---
 
-- centralized configuration storage
-- updateable runtime config values
-- a simple source for client configuration retrieval
+## Key Modules & Responsibilities
 
-## Important
+### Translation Engines
+- **Online engine:** Powered by **NLLB-200 (nllb-ct2-1.3b)**, hosted on the project's dedicated server.
+- **Offline engine:** Based on **ML Kit** language models, providing automatic fallback when the network is unavailable or server capacity is reached.
 
-This README only contains public project information.
+### Features
+- Fast voice and text translation (Persian <-> English).
+- Audio playback of translated text.
+- Simple, lightweight, and ad-free design.
+- Automatic version checking against the latest stable GitHub release.
 
-Internal operational details, private maintenance instructions, and sensitive project notes are documented separately in local/private files.
+---
+
+## Architectural Principles
+1. **Decoupled Architecture:** Separates runtime execution logic from configuration state and language definition assets.
+2. **Deterministic Alignment:** Designed to interface seamlessly with structured positional-sequential mapping models.
+3. **Low-Latency Streaming:** Specifications tuned for interactive, turn-by-turn conversational interfaces.
+
+---
+
+## System Integration & Download Guide
+Configurations defined here are ingested directly by active LingoDirect deployments. 
+
+**Official APK files** are available in the Assets section of the GitHub releases repository:
+[Download LingoDirect Releases](https://github.com/1866universe/lingodirect-config/releases)
+
+[راهنمای فارسی](README_FA.md)
+
+---
+*1866Universe 2026 ©*

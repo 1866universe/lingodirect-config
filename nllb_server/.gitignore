@@ -1,0 +1,17 @@
+.admin_secret
+*.env
+
+# Python Cache & Env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Large AI models
+models/
+*.bin
+*.safetensors
+*.ct2
+
+# Logs & temporary files
+*.log
