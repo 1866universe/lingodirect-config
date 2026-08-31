@@ -1,6 +1,7 @@
 {
+  "base_url": "https://8ef5c6058a1861.app.lhr.life",
   "server": {
-    "baseUrl": "https://5107a9a91e802d.lhr.life",
+    "baseUrl": "https://8ef5c6058a1861.app.lhr.life",
     "status": "online"
   },
   "app_management": {
@@ -32,6 +33,5 @@
         }
       ]
     }
-  },
-  "base_url": "https://5107a9a91e802d.lhr.life"
+  }
 }
